@@ -1,0 +1,9 @@
+.env
+.DS_Store
+
+# Go
+/bin/
+/dist/
+/tmp/
+**/*.test
+coverage.*
