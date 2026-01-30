@@ -13,11 +13,12 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	SMTPHost string
-	SMTPPort int
-	SMTPUser string
-	SMTPPass string
-	SMTPFrom string
+	SMTPHost              string
+	SMTPPort              int
+	SMTPUser              string
+	SMTPPass              string
+	SMTPFrom              string
+	ChatContextWindowSize int
 }
 
 func Load() Config {
@@ -59,6 +60,13 @@ func Load() Config {
 		smtpFrom = os.Getenv("SMTP_USER")
 	}
 
+	windowSize := 20
+	if v := os.Getenv("CHAT_CONTEXT_WINDOW_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			windowSize = n
+		}
+	}
+
 	return Config{
 		DBDSN:     dsn,
 		JWTSecret: secret,
@@ -67,10 +75,11 @@ func Load() Config {
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
 		RedisDB:       redisDB,
 
-		SMTPHost: smtpHost,
-		SMTPPort: smtpPort,
-		SMTPUser: os.Getenv("SMTP_USER"),
-		SMTPPass: os.Getenv("SMTP_PASS"),
-		SMTPFrom: smtpFrom,
+		SMTPHost:              smtpHost,
+		SMTPPort:              smtpPort,
+		SMTPUser:              os.Getenv("SMTP_USER"),
+		SMTPPass:              os.Getenv("SMTP_PASS"),
+		SMTPFrom:              smtpFrom,
+		ChatContextWindowSize: windowSize,
 	}
 }
