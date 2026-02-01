@@ -24,6 +24,10 @@ type Config struct {
 	AIProvider    string
 	OllamaBaseURL string
 	OllamaModel   string
+
+	// rabbitMQ
+	RabbitURL   string
+	RabbitQueue string
 }
 
 func Load() Config {
@@ -88,6 +92,16 @@ func Load() Config {
 		ollamaModel = "llama3:latest"
 	}
 
+	// rabbitMQ config
+	rabbitURL := os.Getenv("RABBIT_URL")
+	if rabbitURL == "" {
+		rabbitURL = "amqp://guest:guest@localhost:5672/"
+	}
+	rabbitQueue := os.Getenv("RABBIT_QUEUE")
+	if rabbitQueue == "" {
+		rabbitQueue = "chat_jobs"
+	}
+
 	return Config{
 		DBDSN:     dsn,
 		JWTSecret: secret,
@@ -106,5 +120,8 @@ func Load() Config {
 		AIProvider:    aiProvider,
 		OllamaBaseURL: ollamaBaseURL,
 		OllamaModel:   ollamaModel,
+
+		RabbitURL:   rabbitURL,
+		RabbitQueue: rabbitQueue,
 	}
 }

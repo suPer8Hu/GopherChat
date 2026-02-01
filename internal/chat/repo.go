@@ -65,3 +65,42 @@ func (r *Repo) ListRecentMessagesDesc(ctx context.Context, userID uint64, sessio
 	}
 	return msgs, nil
 }
+
+// Job CRUD
+func (r *Repo) CreateJob(ctx context.Context, job *Job) error {
+	return r.db.WithContext(ctx).Create(job).Error
+}
+
+func (r *Repo) GetJobByID(ctx context.Context, id string) (*Job, error) {
+	var j Job
+	if err := r.db.WithContext(ctx).First(&j, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &j, nil
+}
+
+func (r *Repo) UpdateJobStatusRunning(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Model(&Job{}).
+		Where("id = ? AND status = ?", id, JobQueued).
+		Update("status", JobRunning).Error
+}
+
+func (r *Repo) MarkJobSucceeded(ctx context.Context, id string, assistantMsgID uint64) error {
+	return r.db.WithContext(ctx).Model(&Job{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"status":            JobSucceeded,
+			"result_message_id": assistantMsgID,
+			"error":             nil,
+		}).Error
+}
+
+func (r *Repo) MarkJobFailed(ctx context.Context, id string, errMsg string) error {
+	return r.db.WithContext(ctx).Model(&Job{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"status":            JobFailed,
+			"error":             errMsg,
+			"result_message_id": nil,
+		}).Error
+}

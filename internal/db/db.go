@@ -27,5 +27,15 @@ func Connect(dsn string) *gorm.DB {
 		panic("failed to connect database: " + err.Error())
 	}
 
+	sqlDB, err := database.DB()
+	if err != nil {
+		panic("failed to get sql DB: " + err.Error())
+	}
+
+	sqlDB.SetMaxOpenConns(20)
+	sqlDB.SetMaxIdleConns(20)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(1 * time.Minute)
+
 	return database
 }

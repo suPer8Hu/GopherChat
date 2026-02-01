@@ -3,11 +3,14 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/suPer8Hu/ai-platform/internal/chat"
+	"github.com/suPer8Hu/ai-platform/internal/common"
 	"github.com/suPer8Hu/ai-platform/internal/httpapi/middleware"
 	"gorm.io/gorm"
 )
@@ -242,4 +245,115 @@ func (h *Handler) SendChatMessageStream(c *gin.Context) {
 			return
 		}
 	}
+}
+
+func (h *Handler) SendChatMessageAsync(c *gin.Context) {
+	type reqBody struct {
+		SessionID string `json:"session_id" binding:"required"`
+		Message   string `json:"message" binding:"required"`
+	}
+	var req reqBody
+
+	uid, okk := userIDFromContext(c)
+	if !okk {
+		fail(c, http.StatusUnauthorized, 40101, "unauthorized")
+		return
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, 10001, "invalid json")
+		return
+	}
+
+	// Validate session belongs to user
+	if err := h.ChatSvc.ValidateSessionOwner(c.Request.Context(), uid, req.SessionID); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			fail(c, http.StatusNotFound, 40401, "session not found")
+			return
+		}
+		log.Printf("[SendChatMessageAsync] ValidateSessionOwner failed uid=%d session_id=%s err=%v", uid, req.SessionID, err)
+		fail(c, http.StatusInternalServerError, 50001, "internal error")
+		return
+	}
+
+	// Insert user message immediately (A-mode)
+	if err := h.ChatSvc.InsertUserMessage(c.Request.Context(), uid, req.SessionID, req.Message); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			fail(c, http.StatusNotFound, 40401, "session not found")
+			return
+		}
+		log.Printf("[SendChatMessageAsync] InsertUserMessage failed uid=%d session_id=%s err=%v", uid, req.SessionID, err)
+		fail(c, http.StatusInternalServerError, 50001, "internal error")
+		return
+	}
+
+	jobID, err := common.NewULID()
+	if err != nil {
+		log.Printf("[SendChatMessageAsync] NewULID failed uid=%d session_id=%s err=%v", uid, req.SessionID, err)
+		fail(c, http.StatusInternalServerError, 50001, "internal error")
+		return
+	}
+
+	// Create job row
+	j := &chat.Job{
+		ID:        jobID,
+		UserID:    uid,
+		SessionID: req.SessionID,
+		Prompt:    req.Message,
+		Status:    chat.JobQueued,
+	}
+	if err := h.ChatSvc.CreateJob(c.Request.Context(), j); err != nil {
+		log.Printf("[SendChatMessageAsync] CreateJob failed uid=%d session_id=%s job_id=%s err=%v", uid, req.SessionID, jobID, err)
+		fail(c, http.StatusInternalServerError, 50001, "internal error")
+		return
+	}
+
+	// Enqueue
+	if err := h.Rabbit.PublishJob(c.Request.Context(), jobID); err != nil {
+		log.Printf("[SendChatMessageAsync] PublishJob failed uid=%d session_id=%s job_id=%s err=%v", uid, req.SessionID, jobID, err)
+		// mark job failed (optional); simplest: keep queued + client can retry enqueue later
+		fail(c, http.StatusInternalServerError, 50002, "enqueue failed")
+		return
+	}
+
+	ok(c, gin.H{"job_id": jobID})
+}
+
+func (h *Handler) GetChatJob(c *gin.Context) {
+	uid, okk := userIDFromContext(c)
+	if !okk {
+		fail(c, http.StatusUnauthorized, 40101, "unauthorized")
+		return
+	}
+	jobID := c.Param("job_id")
+	if jobID == "" {
+		fail(c, http.StatusBadRequest, 10002, "job_id required")
+		return
+	}
+
+	j, err := h.ChatSvc.GetJob(c.Request.Context(), jobID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			fail(c, http.StatusNotFound, 40402, "job not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, 50001, "internal error")
+		return
+	}
+	if j.UserID != uid {
+		// hide existence
+		fail(c, http.StatusNotFound, 40402, "job not found")
+		return
+	}
+
+	ok(c, gin.H{
+		"job": gin.H{
+			"id":                j.ID,
+			"session_id":        j.SessionID,
+			"status":            j.Status,
+			"result_message_id": j.ResultMessageID,
+			"error":             j.Error,
+			"created_at":        j.CreatedAt,
+			"updated_at":        j.UpdatedAt,
+		},
+	})
 }

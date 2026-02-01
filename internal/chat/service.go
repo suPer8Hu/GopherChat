@@ -218,3 +218,73 @@ func (s *Service) SendMessageStream(ctx context.Context, userID uint64, sessionI
 
 	return outChunks, outDone, outMsgID, outErrs
 }
+
+func (s *Service) ValidateSessionOwner(ctx context.Context, userID uint64, sessionID string) error {
+	sess, err := s.repo.GetSessionBySessionID(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return gorm.ErrRecordNotFound
+		}
+		return err
+	}
+	if sess.UserID != userID {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (s *Service) InsertUserMessage(ctx context.Context, userID uint64, sessionID string, content string) error {
+	// session ownership check
+	if err := s.ValidateSessionOwner(ctx, userID, sessionID); err != nil {
+		return err
+	}
+	return s.repo.InsertMessage(ctx, &Message{
+		SessionID: sessionID,
+		UserID:    userID,
+		Role:      "user",
+		Content:   content,
+	})
+}
+
+func (s *Service) CreateJob(ctx context.Context, job *Job) error {
+	return s.repo.CreateJob(ctx, job)
+}
+
+func (s *Service) GetJob(ctx context.Context, jobID string) (*Job, error) {
+	return s.repo.GetJobByID(ctx, jobID)
+}
+
+func (s *Service) GenerateAssistantReplyAndInsert(ctx context.Context, userID uint64, sessionID string) (string, uint64, error) {
+	// session ownership check
+	if err := s.ValidateSessionOwner(ctx, userID, sessionID); err != nil {
+		return "", 0, err
+	}
+
+	recentDesc, err := s.repo.ListRecentMessagesDesc(ctx, userID, sessionID, s.contextWindowSize)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// provider expects ASC
+	providerMsgs := make([]ai.Message, 0, len(recentDesc))
+	for i := len(recentDesc) - 1; i >= 0; i-- {
+		m := recentDesc[i]
+		providerMsgs = append(providerMsgs, ai.Message{Role: m.Role, Content: m.Content})
+	}
+
+	reply, err := s.provider.Chat(ctx, providerMsgs)
+	if err != nil {
+		return "", 0, err
+	}
+
+	assistantMsg := &Message{
+		SessionID: sessionID,
+		UserID:    userID,
+		Role:      "assistant",
+		Content:   reply,
+	}
+	if err := s.repo.InsertMessage(ctx, assistantMsg); err != nil {
+		return "", 0, err
+	}
+	return reply, assistantMsg.ID, nil
+}

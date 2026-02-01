@@ -8,6 +8,7 @@ import (
 	"github.com/suPer8Hu/ai-platform/internal/chat"
 	"github.com/suPer8Hu/ai-platform/internal/config"
 	"github.com/suPer8Hu/ai-platform/internal/email"
+	"github.com/suPer8Hu/ai-platform/internal/store/rabbitmq"
 	"github.com/suPer8Hu/ai-platform/internal/store/redisstore"
 	"gorm.io/gorm"
 )
@@ -18,6 +19,7 @@ type Handler struct {
 	Redis       *redisstore.Store
 	SMTPSetting email.SMTPConfig
 	ChatSvc     *chat.Service
+	Rabbit      *rabbitmq.Publisher
 }
 
 func NewHandler(db *gorm.DB, cfg config.Config, r *redisstore.Store) *Handler {
@@ -32,11 +34,17 @@ func NewHandler(db *gorm.DB, cfg config.Config, r *redisstore.Store) *Handler {
 		panic(fmt.Sprintf("unsupported AI_PROVIDER=%q", cfg.AIProvider))
 	}
 	chatSvc := chat.NewService(repo, provider, cfg.ChatContextWindowSize)
+	// rabbitmq
+	pub, err := rabbitmq.NewPublisher(cfg.RabbitURL, cfg.RabbitQueue)
+	if err != nil {
+		panic(err)
+	}
 	return &Handler{DB: db, Cfg: cfg, Redis: r, SMTPSetting: email.SMTPConfig{Host: cfg.SMTPHost,
 		Port: cfg.SMTPPort,
 		User: cfg.SMTPUser,
 		Pass: cfg.SMTPPass,
 		From: cfg.SMTPFrom},
 		ChatSvc: chatSvc,
+		Rabbit:  pub,
 	}
 }

@@ -47,7 +47,10 @@ func NewRouter(db *gorm.DB, cfg config.Config, rds *redisstore.Store) *gin.Engin
 	// Chat (JWT required)
 	authGroup.POST("/chat/sessions", h.CreateChatSession)
 	authGroup.POST("/chat/messages", h.SendChatMessage)
-	authGroup.GET("/chat/sessions/:session_id/messages", h.ListChatMessages)
 	authGroup.POST("/chat/messages/stream", h.SendChatMessageStream)
+	authGroup.POST("/chat/messages/async", h.SendChatMessageAsync)
+	authGroup.GET("/chat/sessions/:session_id/messages", h.ListChatMessages)
+	authGroup.GET("/chat/jobs/:job_id", h.GetChatJob)
+
 	return r
 }

@@ -23,7 +23,7 @@ func main() {
 	cfg := config.Load()
 	// MySQL
 	database := db.Connect(cfg.DBDSN)
-	if err := database.AutoMigrate(&models.User{}, &chat.Message{}, &chat.Session{}); err != nil {
+	if err := database.AutoMigrate(&models.User{}, &chat.Message{}, &chat.Session{}, &chat.Job{}); err != nil {
 		log.Fatalf("auto migrate failed: %v", err)
 	}
 
