@@ -1,1 +1,1 @@
-# ai-platform
+# GopherChat
