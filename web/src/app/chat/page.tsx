@@ -7,19 +7,11 @@ import { clearToken, getToken } from "@/lib/auth";
 
 const PAGE_SIZE = 20;
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+// const STREAM_FIRST_CHUNK_TIMEOUT_MS = 8000;
+//set it to 50 to test if the stream can turn it in async mode
+const STREAM_FIRST_CHUNK_TIMEOUT_MS = 50; 
+const ASYNC_POLL_INTERVAL_MS = 1000;
 type Me = { id: number; email: string; username: string };
-
-type JobStatus = "queued" | "running" | "succeeded" | "failed";
-
-type Job = {
-  id: string;
-  session_id: string;
-  status: JobStatus;
-  result_message_id: number | null;
-  error: string | null;
-  created_at: string;
-  updated_at: string;
-};
 
 type ChatMessage = {
   id: number;
@@ -54,10 +46,11 @@ export default function ChatPage() {
   const [streamingText, setStreamingText] = useState("");
   const [streaming, setStreaming] = useState(false);
 
-  const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDismissed, setErrorDismissed] = useState(false);
 
   const streamAbort = useRef<AbortController | null>(null);
+  const pollTimer = useRef<number | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const authed = useMemo(() => Boolean(getToken()), []);
 
@@ -147,7 +140,6 @@ export default function ChatPage() {
       setSessionId(null);
       setMessages([]);
       setNextBeforeId(null);
-      setJob(null);
       return;
     }
 
@@ -161,6 +153,7 @@ export default function ChatPage() {
   useEffect(() => {
     return () => {
       if (streamAbort.current) streamAbort.current.abort();
+      if (pollTimer.current) window.clearInterval(pollTimer.current);
     };
   }, []);
 
@@ -177,7 +170,42 @@ export default function ChatPage() {
     await refreshMessages(sid);
   }
 
-  async function sendStreamMessage(sid: string, msg: string) {
+  async function startPolling(jobId: string, sid: string) {
+    if (pollTimer.current) window.clearInterval(pollTimer.current);
+
+    pollTimer.current = window.setInterval(async () => {
+      try {
+        const data = await apiFetch<{ job: { status: string; error?: string | null } }>(
+          `/chat/jobs/${jobId}`,
+          { auth: true }
+        );
+        if (data.job.status === "succeeded") {
+          if (pollTimer.current) window.clearInterval(pollTimer.current);
+          pollTimer.current = null;
+          await refreshMessages(sid);
+        } else if (data.job.status === "failed") {
+          if (pollTimer.current) window.clearInterval(pollTimer.current);
+          pollTimer.current = null;
+          setError(data.job.error || "Async job failed");
+        }
+      } catch (e) {
+        // ignore transient errors
+      }
+    }, ASYNC_POLL_INTERVAL_MS);
+  }
+
+  async function sendAsyncMessage(sid: string, msg: string, idemKey: string) {
+    const data = await apiFetch<{ job_id: string }>("/chat/messages/async", {
+      method: "POST",
+      auth: true,
+      headers: { "Idempotency-Key": idemKey },
+      body: JSON.stringify({ session_id: sid, message: msg }),
+    });
+    refreshMessages(sid).catch(() => {});
+    await startPolling(data.job_id, sid);
+  }
+
+  async function sendStreamMessage(sid: string, msg: string, idemKey: string) {
     if (!API_BASE_URL) {
       throw new Error("Missing NEXT_PUBLIC_API_BASE_URL");
     }
@@ -188,11 +216,21 @@ export default function ChatPage() {
     const controller = new AbortController();
     streamAbort.current = controller;
 
+    let gotChunk = false;
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      if (!gotChunk) {
+        timedOut = true;
+        controller.abort();
+      }
+    }, STREAM_FIRST_CHUNK_TIMEOUT_MS);
+
     const res = await fetch(`${API_BASE_URL}/chat/messages/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        "Idempotency-Key": idemKey,
       },
       body: JSON.stringify({ session_id: sid, message: msg }),
       signal: controller.signal,
@@ -200,7 +238,11 @@ export default function ChatPage() {
 
     if (!res.ok || !res.body) {
       const text = await res.text();
-      throw new Error(text || `HTTP ${res.status}`);
+      window.clearTimeout(timeoutId);
+      const err = new Error(text || `HTTP ${res.status}`);
+      (err as any).gotChunk = gotChunk;
+      (err as any).timedOut = timedOut;
+      throw err;
     }
 
     const reader = res.body.getReader();
@@ -219,37 +261,53 @@ export default function ChatPage() {
 
       if (event === "chunk" || payload.type === "chunk") {
         const delta = typeof payload.delta === "string" ? payload.delta : "";
-        if (delta) setStreamingText((prev) => prev + delta);
+        if (delta) {
+          if (!gotChunk) {
+            gotChunk = true;
+            window.clearTimeout(timeoutId);
+          }
+          setStreamingText((prev) => prev + delta);
+        }
       } else if (event === "error" || payload.type === "error") {
         const msgText = payload.message || "Stream error";
-        throw new Error(msgText);
+        const err = new Error(msgText);
+        (err as any).gotChunk = gotChunk;
+        (err as any).timedOut = timedOut;
+        throw err;
       } else if (event === "done" || payload.type === "done") {
         doneEvent = true;
       }
     };
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() ?? "";
-      for (const part of parts) {
-        const lines = part.split("\n");
-        let event = "";
-        let data = "";
-        for (const line of lines) {
-          if (line.startsWith("event:")) event = line.slice(6).trim();
-          if (line.startsWith("data:")) data += line.slice(5).trim();
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const lines = part.split("\n");
+          let event = "";
+          let data = "";
+          for (const line of lines) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            if (line.startsWith("data:")) data += line.slice(5).trim();
+          }
+          handleEvent(event, data);
         }
-        handleEvent(event, data);
       }
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error("Stream failed");
+      (err as any).gotChunk = gotChunk;
+      (err as any).timedOut = timedOut;
+      window.clearTimeout(timeoutId);
+      throw err;
     }
 
-    if (doneEvent) {
-      await refreshMessages(sid);
-    }
+    window.clearTimeout(timeoutId);
+    if (doneEvent) await refreshMessages(sid);
   }
 
   async function onSend(e: React.FormEvent) {
@@ -263,16 +321,38 @@ export default function ChatPage() {
 
     setSending(true);
     setError(null);
+    setErrorDismissed(false);
     setInput("");
-    setJob(null);
     setStreamingText("");
 
     try {
+      const idemKey =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`;
+
       if (responseMode === "stream") {
         setStreaming(true);
-        await sendStreamMessage(sessionId, msg);
+        try {
+          await sendStreamMessage(sessionId, msg, idemKey);
+        } catch (e) {
+          const gotChunk = Boolean((e as any)?.gotChunk);
+          const timedOut = Boolean((e as any)?.timedOut);
+          if (!gotChunk || timedOut) {
+            await sendAsyncMessage(sessionId, msg, idemKey);
+          } else {
+            throw e;
+          }
+        }
       } else {
-        await sendFullMessage(sessionId, msg);
+        try {
+          await sendFullMessage(sessionId, msg);
+        } catch (e) {
+          await sendAsyncMessage(sessionId, msg, idemKey);
+        }
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("chat:sessions:refresh"));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to send");
@@ -283,7 +363,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="min-h-screen p-6">
+    <div className="h-[100dvh] p-6 flex flex-col overflow-hidden">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">Chat</h1>
@@ -304,103 +384,135 @@ export default function ChatPage() {
         </button>
       </div>
 
-      {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+      {error && !errorDismissed ? (
+        <div className="mt-4 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="font-medium">Message delivery failed</div>
+              <div className="mt-1 text-xs text-red-100/80">
+                We could not reach the AI service. Your message is queued and will retry automatically.
+              </div>
+            </div>
+            <button
+              className="rounded px-2 py-1 text-xs text-red-100/70 hover:text-red-100"
+              onClick={() => setErrorDismissed(true)}
+              type="button"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      ) : null}
 
-      <div className="mt-6 grid gap-4">
-        <div className="border rounded p-4 bg-white text-slate-900">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-medium">Messages</div>
-            <div className="flex items-center gap-2">
+      <div className="mt-6 flex-1 overflow-auto pr-1">
+        <div className="grid gap-4 pb-6">
+          <div className="border border-white/10 rounded p-4 bg-white/5 text-white backdrop-blur shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">Messages</div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="text-sm border border-white/15 rounded px-2 py-1 text-white/80 disabled:opacity-50 hover:bg-white/10"
+                  onClick={() => (sessionId ? refreshMessages(sessionId) : null)}
+                  disabled={!sessionId || refreshing}
+                  type="button"
+                >
+                  {refreshing ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {!sessionId ? (
+              <p className="mt-4 text-sm text-white/70">
+                Select a session on the left, or click{" "}
+                <span className="font-medium">New chat</span>.
+              </p>
+            ) : null}
+
+            <div className="mt-3 flex items-center justify-between">
               <button
-                className="text-sm border rounded px-2 py-1 disabled:opacity-50"
-                onClick={() => (sessionId ? refreshMessages(sessionId) : null)}
-                disabled={!sessionId || refreshing}
+                className="text-sm border border-white/15 rounded px-2 py-1 text-white/80 disabled:opacity-50 hover:bg-white/10"
+                onClick={loadOlderMessages}
+                disabled={!sessionId || !nextBeforeId || loadingOlder}
                 type="button"
+                title={!nextBeforeId ? "No more history" : "Load older messages"}
               >
-                {refreshing ? "Refreshing..." : "Refresh"}
+                {loadingOlder
+                  ? "Loading..."
+                  : nextBeforeId
+                    ? "Load older"
+                    : "No more history"}
               </button>
+
+              {nextBeforeId ? (
+                <span className="text-xs text-white/50">
+                  next_before_id={nextBeforeId}
+                </span>
+              ) : (
+                <span className="text-xs text-white/50">end of history</span>
+              )}
+            </div>
+
+            <div className="mt-5 space-y-5">
+              {messages.length === 0 ? (
+                <p className="text-base text-white/70">No messages yet.</p>
+              ) : (
+                messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div className="max-w-[80%]">
+                      <div
+                        className={`text-xs text-white/50 ${
+                          m.role === "user" ? "text-right" : "text-left"
+                        }`}
+                      >
+                        #{m.id} · {m.role} · {new Date(m.created_at).toLocaleString()}
+                      </div>
+                      <div
+                        className={`mt-2 whitespace-pre-wrap rounded-2xl px-4 py-3 text-base leading-7 shadow-sm ${
+                          m.role === "user"
+                            ? "bg-emerald-300/90 text-slate-900"
+                            : "bg-white/10 text-white border border-white/10"
+                        }`}
+                      >
+                        {m.content}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+              {streaming ? (
+                <div className="flex justify-start">
+                  <div className="max-w-[80%]">
+                    <div className="text-xs text-white/50">assistant · streaming</div>
+                    <div className="mt-2 whitespace-pre-wrap rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-base leading-7 text-white shadow-sm">
+                      {streamingText || "…"}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <div ref={bottomRef} />
             </div>
           </div>
 
-          {!sessionId ? (
-            <p className="mt-4 text-sm text-gray-600">
-              Select a session on the left, or click{" "}
-              <span className="font-medium">New chat</span>.
-            </p>
-          ) : null}
-
-          <div className="mt-3 flex items-center justify-between">
-            <button
-              className="text-sm border rounded px-2 py-1 disabled:opacity-50"
-              onClick={loadOlderMessages}
-              disabled={!sessionId || !nextBeforeId || loadingOlder}
-              type="button"
-              title={!nextBeforeId ? "No more history" : "Load older messages"}
-            >
-              {loadingOlder
-                ? "Loading..."
-                : nextBeforeId
-                  ? "Load older"
-                  : "No more history"}
-            </button>
-
-            {nextBeforeId ? (
-              <span className="text-xs text-gray-500">
-                next_before_id={nextBeforeId}
-              </span>
-            ) : (
-              <span className="text-xs text-gray-500">end of history</span>
-            )}
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {messages.length === 0 ? (
-              <p className="text-sm text-gray-600">No messages yet.</p>
-            ) : (
-              messages.map((m) => (
-                <div key={m.id} className="text-sm">
-                  <div className="text-xs text-gray-500">
-                    #{m.id} · {m.role} ·{" "}
-                    {new Date(m.created_at).toLocaleString()}
-                  </div>
-                  <div className="mt-1 whitespace-pre-wrap">{m.content}</div>
-                </div>
-              ))
-            )}
-            {streaming ? (
-              <div className="text-sm">
-                <div className="text-xs text-gray-500">assistant · streaming</div>
-                <div className="mt-1 whitespace-pre-wrap">
-                  {streamingText || "…"}
-                </div>
-              </div>
-            ) : null}
-            <div ref={bottomRef} />
-          </div>
         </div>
+      </div>
 
-        <div className="border rounded p-4 bg-white text-slate-900">
-          <div className="text-sm font-medium">Latest Job</div>
-          <div className="mt-2">
-            {job ? (
-              <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto">
-                {JSON.stringify(job, null, 2)}
-              </pre>
-            ) : (
-              <p className="text-sm text-gray-600">No job yet.</p>
-            )}
-          </div>
-        </div>
-
-        <form onSubmit={onSend} className="border rounded p-4 bg-white text-slate-900">
+      <div className="pt-4">
+        <form
+          onSubmit={onSend}
+          className="border border-white/15 rounded p-4 bg-white/10 text-white backdrop-blur shadow-[0_-10px_30px_rgba(0,0,0,0.25)]"
+        >
           <label className="block text-sm font-medium">Send</label>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-xs font-medium text-gray-600">Response mode</span>
-            <div className="inline-flex rounded border p-0.5">
+            <span className="text-xs font-medium text-white/60">Response mode</span>
+            <div className="inline-flex rounded border border-white/15 p-0.5">
               <button
                 type="button"
                 className={`rounded px-2 py-1 ${
-                  responseMode === "full" ? "bg-black text-white" : "text-gray-700"
+                  responseMode === "full" ? "bg-white text-slate-900" : "text-white/70"
                 }`}
                 onClick={() => setResponseMode("full")}
               >
@@ -409,7 +521,7 @@ export default function ChatPage() {
               <button
                 type="button"
                 className={`rounded px-2 py-1 ${
-                  responseMode === "stream" ? "bg-black text-white" : "text-gray-700"
+                  responseMode === "stream" ? "bg-white text-slate-900" : "text-white/70"
                 }`}
                 onClick={() => setResponseMode("stream")}
               >
@@ -419,25 +531,20 @@ export default function ChatPage() {
           </div>
           <div className="mt-2 flex gap-2">
             <input
-              className="flex-1 border rounded px-3 py-2"
+              className="flex-1 rounded border border-white/15 bg-white/5 px-3 py-2 text-white placeholder:text-white/40"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Type a message..."
               disabled={sending}
             />
             <button
-              className="rounded bg-black text-white px-4 py-2 disabled:opacity-50"
+              className="rounded bg-white text-slate-900 px-4 py-2 disabled:opacity-50"
               type="submit"
               disabled={sending || !sessionId}
             >
               {sending ? (responseMode === "stream" ? "Streaming..." : "Sending...") : "Send"}
             </button>
           </div>
-          <p className="mt-2 text-xs text-gray-500">
-            Pagination uses <code>before_id</code> and{" "}
-            <code>next_before_id</code>. Session is persisted via{" "}
-            <code>?session_id=...</code> so refresh will not lose it.
-          </p>
         </form>
       </div>
     </div>

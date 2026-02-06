@@ -29,6 +29,31 @@ func (r *Repo) GetSessionBySessionID(ctx context.Context, sessionID string) (*Se
 	return &s, nil
 }
 
+func (r *Repo) UpdateSessionTitle(ctx context.Context, userID uint64, sessionID, title string) error {
+	return r.db.WithContext(ctx).
+		Model(&Session{}).
+		Where("session_id = ? AND user_id = ?", sessionID, userID).
+		Update("title", title).Error
+}
+
+func (r *Repo) DeleteSessionCascade(ctx context.Context, userID uint64, sessionID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ? AND session_id = ?", userID, sessionID).
+			Delete(&Message{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ? AND session_id = ?", userID, sessionID).
+			Delete(&Job{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ? AND session_id = ?", userID, sessionID).
+			Delete(&Session{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // Uses numeric DB primary key pagination with beforeID (id < beforeID).
 func (r *Repo) ListSessions(ctx context.Context, userID uint64, limit int, beforeID uint64) ([]Session, error) {
 	q := r.db.WithContext(ctx).
@@ -211,4 +236,25 @@ func (r *Repo) InsertUserMessageOrGetExisting(ctx context.Context, userID uint64
 		return nil, false, err
 	}
 	return nil, false, getErr
+}
+
+// auto generate title for each session that user created
+func (r *Repo) UpdateSessionTitleIfEmpty(ctx context.Context, userID uint64, sessionID, title string) error {
+	if title == "" {
+		return nil
+	}
+	return r.db.WithContext(ctx).
+		Model(&Session{}).
+		Where("session_id = ? AND user_id = ? AND (title = '' OR title IS NULL)", sessionID, userID).
+		Update("title", title).Error
+}
+
+func (r *Repo) UpdateSessionTitleIfMatch(ctx context.Context, userID uint64, sessionID, title, match string) error {
+	if title == "" || match == "" {
+		return nil
+	}
+	return r.db.WithContext(ctx).
+		Model(&Session{}).
+		Where("session_id = ? AND user_id = ? AND title = ?", sessionID, userID, match).
+		Update("title", title).Error
 }

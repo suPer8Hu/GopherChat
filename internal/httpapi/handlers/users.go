@@ -5,7 +5,9 @@ import (
 	"math/big"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -130,6 +132,71 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		"username": user.Username,
 		"token":    token,
 	})
+}
+
+type resetPasswordReq struct {
+	Email       string `json:"email"`
+	Captcha     string `json:"captcha"`
+	NewPassword string `json:"new_password"`
+}
+
+func (h *Handler) ResetPassword(c *gin.Context) {
+	var req resetPasswordReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.Fail(c, http.StatusBadRequest, 10001, "invalid json")
+		return
+	}
+
+	req.Email = strings.TrimSpace(req.Email)
+	req.Captcha = strings.TrimSpace(req.Captcha)
+	if req.Email == "" || req.Captcha == "" || req.NewPassword == "" {
+		common.Fail(c, http.StatusBadRequest, 10002, "email, captcha and new_password required")
+		return
+	}
+	if utf8.RuneCountInString(req.NewPassword) < 6 {
+		common.Fail(c, http.StatusBadRequest, 10002, "new_password too short")
+		return
+	}
+
+	code, err := h.Redis.GetCaptcha(c.Request.Context(), req.Email)
+	if err != nil {
+		if err == redis.Nil {
+			common.Fail(c, http.StatusBadRequest, 10020, "captcha expired or not found")
+			return
+		}
+		common.Fail(c, http.StatusInternalServerError, 20001, "redis error")
+		return
+	}
+	if code != req.Captcha {
+		common.Fail(c, http.StatusBadRequest, 10021, "invalid captcha")
+		return
+	}
+	_ = h.Redis.DeleteCaptcha(c.Request.Context(), req.Email)
+
+	var user models.User
+	if err := h.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			common.Fail(c, http.StatusNotFound, 40401, "user not found")
+			return
+		}
+		common.Fail(c, http.StatusInternalServerError, 20001, "db error")
+		return
+	}
+
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		common.Fail(c, http.StatusInternalServerError, 20002, "failed to hash password")
+		return
+	}
+
+	if err := h.DB.Model(&models.User{}).
+		Where("id = ?", user.ID).
+		Update("password_hash", hash).Error; err != nil {
+		common.Fail(c, http.StatusInternalServerError, 20001, "db error")
+		return
+	}
+
+	common.OK(c, gin.H{"updated": true})
 }
 
 func (h *Handler) GetUserByID(c *gin.Context) {

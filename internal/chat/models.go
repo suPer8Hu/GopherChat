@@ -8,6 +8,7 @@ type Session struct {
 	UserID    uint64    `gorm:"index;not null" json:"-"`
 	Provider  string    `gorm:"type:varchar(32);not null" json:"provider"`
 	Model     string    `gorm:"type:varchar(64);not null" json:"model"`
+	Title     string    `gorm:"type:varchar(128);not null;default:''" json:"title"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

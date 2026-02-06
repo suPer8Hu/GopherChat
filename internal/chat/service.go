@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/suPer8Hu/ai-platform/internal/ai"
 	"gorm.io/gorm"
@@ -72,6 +73,20 @@ func (s *Service) ListSessions(ctx context.Context, userID uint64, limit int, be
 	return s.repo.ListSessions(ctx, userID, limit, beforeID)
 }
 
+func (s *Service) UpdateSessionTitle(ctx context.Context, userID uint64, sessionID, title string) error {
+	if err := s.ValidateSessionOwner(ctx, userID, sessionID); err != nil {
+		return err
+	}
+	return s.repo.UpdateSessionTitle(ctx, userID, sessionID, title)
+}
+
+func (s *Service) DeleteSession(ctx context.Context, userID uint64, sessionID string) error {
+	if err := s.ValidateSessionOwner(ctx, userID, sessionID); err != nil {
+		return err
+	}
+	return s.repo.DeleteSessionCascade(ctx, userID, sessionID)
+}
+
 func (s *Service) SendMessage(ctx context.Context, userID uint64, sessionID string, content string) (reply string, assistantMsgID uint64, err error) {
 	// 1) verify session ownership
 	session, err := s.repo.GetSessionBySessionID(ctx, sessionID)
@@ -101,6 +116,7 @@ func (s *Service) SendMessage(ctx context.Context, userID uint64, sessionID stri
 	if err := s.repo.InsertMessage(ctx, userMsg); err != nil {
 		return "", 0, err
 	}
+	s.maybeSetSessionTitle(ctx, userID, sessionID, content)
 
 	// 3) build provider messages from recent DB history
 	recentDesc, err := s.repo.ListRecentMessagesDesc(ctx, userID, sessionID, s.contextWindowSize)
@@ -147,7 +163,7 @@ func (s *Service) ListMessages(ctx context.Context, userID uint64, sessionID str
 
 // SendMessageStream stores the user message immediately, streams assistant chunks,
 // and finally stores the assistant message after streaming completes.
-func (s *Service) SendMessageStream(ctx context.Context, userID uint64, sessionID string, content string) (chunks <-chan string, done <-chan struct{}, assistantMsgID <-chan uint64, errs <-chan error) {
+func (s *Service) SendMessageStream(ctx context.Context, userID uint64, sessionID string, content string, idempoKey *string) (chunks <-chan string, done <-chan struct{}, assistantMsgID <-chan uint64, errs <-chan error) {
 	outChunks := make(chan string, 16)
 	outDone := make(chan struct{})
 	outMsgID := make(chan uint64, 1)
@@ -181,17 +197,26 @@ func (s *Service) SendMessageStream(ctx context.Context, userID uint64, sessionI
 			return
 		}
 
-		// 2) insert user message
-		userMsg := &Message{
-			SessionID: sessionID,
-			UserID:    userID,
-			Role:      "user",
-			Content:   content,
+		// 2) insert user message (idempotent if key provided)
+		if idempoKey != nil && *idempoKey != "" {
+			_, _, err := s.repo.InsertUserMessageOrGetExisting(ctx, userID, sessionID, content, idempoKey)
+			if err != nil {
+				outErrs <- err
+				return
+			}
+		} else {
+			userMsg := &Message{
+				SessionID: sessionID,
+				UserID:    userID,
+				Role:      "user",
+				Content:   content,
+			}
+			if err := s.repo.InsertMessage(ctx, userMsg); err != nil {
+				outErrs <- err
+				return
+			}
 		}
-		if err := s.repo.InsertMessage(ctx, userMsg); err != nil {
-			outErrs <- err
-			return
-		}
+		s.maybeSetSessionTitle(ctx, userID, sessionID, content)
 
 		// 3) load recent messages, build provider context (ASC)
 		recentDesc, err := s.repo.ListRecentMessagesDesc(ctx, userID, sessionID, s.contextWindowSize)
@@ -266,16 +291,19 @@ func (s *Service) ValidateSessionOwner(ctx context.Context, userID uint64, sessi
 }
 
 func (s *Service) InsertUserMessage(ctx context.Context, userID uint64, sessionID string, content string) error {
-	// session ownership check
 	if err := s.ValidateSessionOwner(ctx, userID, sessionID); err != nil {
 		return err
 	}
-	return s.repo.InsertMessage(ctx, &Message{
+	if err := s.repo.InsertMessage(ctx, &Message{
 		SessionID: sessionID,
 		UserID:    userID,
 		Role:      "user",
 		Content:   content,
-	})
+	}); err != nil {
+		return err
+	}
+	s.maybeSetSessionTitle(ctx, userID, sessionID, content)
+	return nil
 }
 
 func (s *Service) CreateJob(ctx context.Context, job *Job) error {
@@ -338,5 +366,93 @@ func (s *Service) CreateJobOrGetExisting(ctx context.Context, job *Job) (*Job, b
 }
 
 func (s *Service) InsertUserMessageOrGetExisting(ctx context.Context, userID uint64, sessionID string, content string, key *string) (*Message, bool, error) {
-	return s.repo.InsertUserMessageOrGetExisting(ctx, userID, sessionID, content, key)
+	msg, created, err := s.repo.InsertUserMessageOrGetExisting(ctx, userID, sessionID, content, key)
+	if err == nil && created {
+		s.maybeSetSessionTitle(ctx, userID, sessionID, content)
+	}
+	return msg, created, err
+}
+
+func makeTitleFromText(content string) string {
+	s := strings.TrimSpace(content)
+	if s == "" {
+		return ""
+	}
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.Join(strings.Fields(s), " ")
+	const maxLen = 36
+	r := []rune(s)
+	if len(r) > maxLen {
+		s = string(r[:maxLen]) + "..."
+	}
+	return s
+}
+
+func (s *Service) generateTitleWithAI(ctx context.Context, sess *Session, content string) string {
+	provider, err := s.providerForSession(ctx, sess)
+	if err != nil {
+		return ""
+	}
+
+	prompt := "Generate a short chat title (max 8 words). Return only the title."
+	msgs := []ai.Message{
+		{Role: "system", Content: prompt},
+		{Role: "user", Content: content},
+	}
+	title, err := provider.Chat(ctx, msgs)
+	if err != nil {
+		return ""
+	}
+
+	title = strings.TrimSpace(title)
+	title = strings.Trim(title, "\"'`")
+	title = strings.Join(strings.Fields(title), " ")
+	if title == "" {
+		return ""
+	}
+	const maxRunes = 50
+	r := []rune(title)
+	if len(r) > maxRunes {
+		title = string(r[:maxRunes])
+	}
+	return title
+}
+
+func (s *Service) maybeSetSessionTitle(ctx context.Context, userID uint64, sessionID, content string) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return
+	}
+
+	sess, err := s.repo.GetSessionBySessionID(ctx, sessionID)
+	if err != nil || sess.UserID != userID {
+		return
+	}
+	if strings.TrimSpace(sess.Title) != "" {
+		return
+	}
+
+	fallback := makeTitleFromText(content)
+	if fallback != "" {
+		_ = s.repo.UpdateSessionTitleIfEmpty(ctx, userID, sessionID, fallback)
+	}
+
+	go func(fallbackTitle string) {
+		tctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+
+		title := s.generateTitleWithAI(tctx, sess, content)
+		if title == "" {
+			return
+		}
+		if title == fallbackTitle {
+			return
+		}
+		if fallbackTitle == "" {
+			_ = s.repo.UpdateSessionTitleIfEmpty(tctx, userID, sessionID, title)
+			return
+		}
+		_ = s.repo.UpdateSessionTitleIfMatch(tctx, userID, sessionID, title, fallbackTitle)
+	}(fallback)
 }

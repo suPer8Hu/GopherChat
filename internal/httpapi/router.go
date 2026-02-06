@@ -57,12 +57,17 @@ func NewRouter(db *gorm.DB, cfg config.Config, rds *redisstore.Store) *gin.Engin
 
 	// auth
 	r.POST("/login", h.Login)
+	r.POST("/password/reset", h.ResetPassword)
 	authGroup := r.Group("/")
 	authGroup.Use(middleware.AuthRequired(cfg.JWTSecret))
 	authGroup.GET("/me", h.Me)
+	authGroup.PATCH("/me/password", h.UpdateMyPassword)
+	authGroup.DELETE("/me", h.DeleteMyAccount)
 	// Chat (JWT required)
 	authGroup.POST("/chat/sessions", h.CreateChatSession)
 	authGroup.GET("/chat/sessions", h.ListChatSessions)
+	authGroup.PATCH("/chat/sessions/:session_id", h.UpdateChatSessionTitle)
+	authGroup.DELETE("/chat/sessions/:session_id", h.DeleteChatSession)
 	authGroup.POST("/chat/messages", h.SendChatMessage)
 	authGroup.POST("/chat/messages/stream", h.SendChatMessageStream)
 	authGroup.POST("/chat/messages/async", h.SendChatMessageAsync)

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/suPer8Hu/ai-platform/internal/chat"
@@ -96,6 +97,76 @@ func (h *Handler) ListChatSessions(c *gin.Context) {
 		"sessions":       sess,
 		"next_before_id": nextBeforeID,
 	})
+}
+
+type updateSessionTitleReq struct {
+	Title string `json:"title"`
+}
+
+func (h *Handler) UpdateChatSessionTitle(c *gin.Context) {
+	uid, okk := userIDFromContext(c)
+	if !okk {
+		fail(c, http.StatusUnauthorized, 40101, "unauthorized")
+		return
+	}
+
+	sessionID := c.Param("session_id")
+	if sessionID == "" {
+		fail(c, http.StatusBadRequest, 10002, "session_id required")
+		return
+	}
+
+	var req updateSessionTitleReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, 10001, "invalid json")
+		return
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		fail(c, http.StatusBadRequest, 10002, "title required")
+		return
+	}
+	if utf8.RuneCountInString(title) > 128 {
+		fail(c, http.StatusBadRequest, 10002, "title too long")
+		return
+	}
+
+	if err := h.ChatSvc.UpdateSessionTitle(c.Request.Context(), uid, sessionID, title); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			fail(c, http.StatusNotFound, 40401, "session not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, 50004, "failed to update session title")
+		return
+	}
+
+	ok(c, gin.H{"session_id": sessionID, "title": title})
+}
+
+func (h *Handler) DeleteChatSession(c *gin.Context) {
+	uid, okk := userIDFromContext(c)
+	if !okk {
+		fail(c, http.StatusUnauthorized, 40101, "unauthorized")
+		return
+	}
+
+	sessionID := c.Param("session_id")
+	if sessionID == "" {
+		fail(c, http.StatusBadRequest, 10002, "session_id required")
+		return
+	}
+
+	if err := h.ChatSvc.DeleteSession(c.Request.Context(), uid, sessionID); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			fail(c, http.StatusNotFound, 40401, "session not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, 50005, "failed to delete session")
+		return
+	}
+
+	ok(c, gin.H{"session_id": sessionID, "deleted": true})
 }
 
 type sendMessageReq struct {
@@ -190,6 +261,17 @@ func (h *Handler) SendChatMessageStream(c *gin.Context) {
 		return
 	}
 
+	// idempotency key (optional)
+	idempoKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if len(idempoKey) > 128 {
+		fail(c, http.StatusBadRequest, 10003, "idempotency key too long")
+		return
+	}
+	var idempoKeyPtr *string
+	if idempoKey != "" {
+		idempoKeyPtr = &idempoKey
+	}
+
 	// SSE headers
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -200,7 +282,7 @@ func (h *Handler) SendChatMessageStream(c *gin.Context) {
 	c.Status(http.StatusOK)
 
 	ctx := c.Request.Context()
-	chunks, done, msgIDCh, errs := h.ChatSvc.SendMessageStream(ctx, uid, req.SessionID, req.Message)
+	chunks, done, msgIDCh, errs := h.ChatSvc.SendMessageStream(ctx, uid, req.SessionID, req.Message, idempoKeyPtr)
 
 	// heartbeat ticker (keeps connections alive)
 	ticker := time.NewTicker(15 * time.Second)

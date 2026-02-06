@@ -79,9 +79,14 @@ export default function LoginPage() {
     <FlowBackground>
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="w-full max-w-md border rounded-lg p-6 bg-white text-slate-900 shadow-xl shadow-emerald-500/10">
-          <h1 className="text-xl font-semibold">Login</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-semibold">Login</h1>
+            <Link className="text-xs underline" href="/">
+              Home
+            </Link>
+          </div>
 
-          <form className="mt-4 space-y-3" onSubmit={onSubmit}>
+        <form className="mt-4 space-y-3" onSubmit={onSubmit}>
             <div>
               <label className="block text-sm font-medium">Email</label>
               <div className="relative">
@@ -133,15 +138,20 @@ export default function LoginPage() {
             >
               {submitting ? "Logging in..." : "Login"}
             </button>
-          </form>
-          <p className="mt-4 text-sm">
+        </form>
+        <div className="mt-4 flex items-center justify-between text-sm">
+          <Link className="underline" href="/forgot">
+            Forgot password?
+          </Link>
+          <span>
             No account?{" "}
             <Link className="underline" href="/register">
               Create one
             </Link>
-          </p>
+          </span>
         </div>
       </div>
-    </FlowBackground>
+    </div>
+  </FlowBackground>
   );
 }
