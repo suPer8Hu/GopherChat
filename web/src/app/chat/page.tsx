@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { clearToken, getToken } from "@/lib/auth";
+import { useI18n } from "@/components/LanguageProvider";
+import LanguageToggle from "@/components/LanguageToggle";
 
 const PAGE_SIZE = 20;
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
@@ -30,6 +32,7 @@ export default function ChatPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sidFromUrl = searchParams.get("session_id");
+  const { t } = useI18n();
 
   const [me, setMe] = useState<Me | null>(null);
 
@@ -113,9 +116,7 @@ export default function ChatPage() {
         replace: false,
       });
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Failed to load older messages",
-      );
+      setError(e instanceof Error ? e.message : t("chat.loadOlderFailed"));
     } finally {
       setLoadingOlder(false);
     }
@@ -128,8 +129,8 @@ export default function ChatPage() {
     }
     apiFetch<Me>("/me", { auth: true })
       .then(setMe)
-      .catch((e) => setError(e?.message ?? "Failed to load /me"));
-  }, [authed, router]);
+      .catch((e) => setError(e?.message ?? t("chat.loadMeFailed")));
+  }, [authed, router, t]);
 
   // Use session_id from URL (so refresh keeps the same session),
   // otherwise create a new session and persist it into the URL.
@@ -145,7 +146,7 @@ export default function ChatPage() {
 
     setSessionId(sidFromUrl);
     refreshMessages(sidFromUrl).catch((e) =>
-      setError(e?.message ?? "Failed to load messages"),
+      setError(e?.message ?? t("chat.loadMessagesFailed")),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, sidFromUrl]);
@@ -186,7 +187,7 @@ export default function ChatPage() {
         } else if (data.job.status === "failed") {
           if (pollTimer.current) window.clearInterval(pollTimer.current);
           pollTimer.current = null;
-          setError(data.job.error || "Async job failed");
+          setError(data.job.error || t("chat.asyncFailed"));
         }
       } catch (e) {
         // ignore transient errors
@@ -207,10 +208,10 @@ export default function ChatPage() {
 
   async function sendStreamMessage(sid: string, msg: string, idemKey: string) {
     if (!API_BASE_URL) {
-      throw new Error("Missing NEXT_PUBLIC_API_BASE_URL");
+      throw new Error(t("chat.missingApiBase"));
     }
     const token = getToken();
-    if (!token) throw new Error("Not authenticated");
+    if (!token) throw new Error(t("chat.notAuthed"));
 
     if (streamAbort.current) streamAbort.current.abort();
     const controller = new AbortController();
@@ -269,7 +270,7 @@ export default function ChatPage() {
           setStreamingText((prev) => prev + delta);
         }
       } else if (event === "error" || payload.type === "error") {
-        const msgText = payload.message || "Stream error";
+        const msgText = payload.message || t("chat.streamError");
         const err = new Error(msgText);
         (err as any).gotChunk = gotChunk;
         (err as any).timedOut = timedOut;
@@ -299,7 +300,7 @@ export default function ChatPage() {
         }
       }
     } catch (e) {
-      const err = e instanceof Error ? e : new Error("Stream failed");
+      const err = e instanceof Error ? e : new Error(t("chat.streamFailed"));
       (err as any).gotChunk = gotChunk;
       (err as any).timedOut = timedOut;
       window.clearTimeout(timeoutId);
@@ -312,10 +313,6 @@ export default function ChatPage() {
 
   async function onSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!sessionId) {
-      setError("Session not ready yet. Try again in a moment.");
-      return;
-    }
     const msg = input.trim();
     if (!msg) return;
 
@@ -326,6 +323,25 @@ export default function ChatPage() {
     setStreamingText("");
 
     try {
+      let sid = sessionId;
+      if (!sid) {
+        try {
+          const data = await apiFetch<{ session_id: string }>("/chat/sessions", {
+            method: "POST",
+            auth: true,
+            body: JSON.stringify({}),
+          });
+          sid = data.session_id;
+          setSessionId(sid);
+          const nextQuery = new URLSearchParams(Array.from(searchParams.entries()));
+          nextQuery.set("session_id", sid);
+          router.replace(`/chat?${nextQuery.toString()}`);
+          window.dispatchEvent(new Event("chat:sessions:refresh"));
+        } catch (e) {
+          setError(e instanceof Error ? e.message : t("chat.createSessionFailed"));
+          return;
+        }
+      }
       const idemKey =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
@@ -334,28 +350,28 @@ export default function ChatPage() {
       if (responseMode === "stream") {
         setStreaming(true);
         try {
-          await sendStreamMessage(sessionId, msg, idemKey);
+          await sendStreamMessage(sid, msg, idemKey);
         } catch (e) {
           const gotChunk = Boolean((e as any)?.gotChunk);
           const timedOut = Boolean((e as any)?.timedOut);
           if (!gotChunk || timedOut) {
-            await sendAsyncMessage(sessionId, msg, idemKey);
+            await sendAsyncMessage(sid, msg, idemKey);
           } else {
             throw e;
           }
         }
       } else {
         try {
-          await sendFullMessage(sessionId, msg);
+          await sendFullMessage(sid, msg);
         } catch (e) {
-          await sendAsyncMessage(sessionId, msg, idemKey);
+          await sendAsyncMessage(sid, msg, idemKey);
         }
       }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("chat:sessions:refresh"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to send");
+      setError(e instanceof Error ? e.message : t("chat.sendFailed"));
     } finally {
       setStreaming(false);
       setSending(false);
@@ -363,16 +379,9 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-[100dvh] p-6 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Chat</h1>
-          <p className="text-sm text-white/70">
-            {me ? `Signed in as ${me.email}` : "Loading user..."}{" "}
-            {sessionId ? `· session=${sessionId}` : "· creating session..."}
-          </p>
-        </div>
-
+    <div className="h-[100dvh] p-4 pt-16 md:p-6 md:pt-16 flex flex-col overflow-hidden relative">
+      <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+        <LanguageToggle floating={false} />
         <button
           className="border rounded px-3 py-1"
           onClick={() => {
@@ -380,24 +389,34 @@ export default function ChatPage() {
             router.push("/login");
           }}
         >
-          Logout
+          {t("chat.logout")}
         </button>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold">{t("chat.title")}</h1>
+          <p className="text-sm text-white/70 break-all sm:truncate">
+            {me ? t("chat.signedInAs", { email: me.email }) : t("chat.loadingUser")}{" "}
+            {sessionId ? "" : t("chat.sessionCreating")}
+          </p>
+        </div>
       </div>
 
       {error && !errorDismissed ? (
         <div className="mt-4 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="font-medium">Message delivery failed</div>
+              <div className="font-medium">{t("chat.deliveryFailed")}</div>
               <div className="mt-1 text-xs text-red-100/80">
-                We could not reach the AI service. Your message is queued and will retry automatically.
+                {t("chat.deliveryFailedDesc")}
               </div>
             </div>
             <button
               className="rounded px-2 py-1 text-xs text-red-100/70 hover:text-red-100"
               onClick={() => setErrorDismissed(true)}
               type="button"
-              aria-label="Dismiss"
+              aria-label={t("common.dismiss")}
             >
               ×
             </button>
@@ -409,7 +428,7 @@ export default function ChatPage() {
         <div className="grid gap-4 pb-6">
           <div className="border border-white/10 rounded p-4 bg-white/5 text-white backdrop-blur shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-medium">Messages</div>
+              <div className="text-sm font-medium">{t("chat.messages")}</div>
               <div className="flex items-center gap-2">
                 <button
                   className="text-sm border border-white/15 rounded px-2 py-1 text-white/80 disabled:opacity-50 hover:bg-white/10"
@@ -417,15 +436,14 @@ export default function ChatPage() {
                   disabled={!sessionId || refreshing}
                   type="button"
                 >
-                  {refreshing ? "Refreshing..." : "Refresh"}
+                  {refreshing ? t("sessions.loading") : t("chat.refresh")}
                 </button>
               </div>
             </div>
 
             {!sessionId ? (
               <p className="mt-4 text-sm text-white/70">
-                Select a session on the left, or click{" "}
-                <span className="font-medium">New chat</span>.
+                {t("chat.selectSession")}
               </p>
             ) : null}
 
@@ -435,13 +453,13 @@ export default function ChatPage() {
                 onClick={loadOlderMessages}
                 disabled={!sessionId || !nextBeforeId || loadingOlder}
                 type="button"
-                title={!nextBeforeId ? "No more history" : "Load older messages"}
+                title={!nextBeforeId ? t("chat.noMoreHistory") : t("chat.loadOlder")}
               >
                 {loadingOlder
-                  ? "Loading..."
+                  ? t("sessions.loading")
                   : nextBeforeId
-                    ? "Load older"
-                    : "No more history"}
+                    ? t("chat.loadOlder")
+                    : t("chat.noMoreHistory")}
               </button>
 
               {nextBeforeId ? (
@@ -449,13 +467,13 @@ export default function ChatPage() {
                   next_before_id={nextBeforeId}
                 </span>
               ) : (
-                <span className="text-xs text-white/50">end of history</span>
+                <span className="text-xs text-white/50">{t("chat.endHistory")}</span>
               )}
             </div>
 
             <div className="mt-5 space-y-5">
               {messages.length === 0 ? (
-                <p className="text-base text-white/70">No messages yet.</p>
+                <p className="text-base text-white/70">{t("chat.noMessages")}</p>
               ) : (
                 messages.map((m) => (
                   <div
@@ -486,7 +504,7 @@ export default function ChatPage() {
               {streaming ? (
                 <div className="flex justify-start">
                   <div className="max-w-[80%]">
-                    <div className="text-xs text-white/50">assistant · streaming</div>
+                    <div className="text-xs text-white/50">{t("chat.streaming")}</div>
                     <div className="mt-2 whitespace-pre-wrap rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-base leading-7 text-white shadow-sm">
                       {streamingText || "…"}
                     </div>
@@ -505,9 +523,9 @@ export default function ChatPage() {
           onSubmit={onSend}
           className="border border-white/15 rounded p-4 bg-white/10 text-white backdrop-blur shadow-[0_-10px_30px_rgba(0,0,0,0.25)]"
         >
-          <label className="block text-sm font-medium">Send</label>
+          <label className="block text-sm font-medium">{t("chat.send")}</label>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-xs font-medium text-white/60">Response mode</span>
+            <span className="text-xs font-medium text-white/60">{t("chat.responseMode")}</span>
             <div className="inline-flex rounded border border-white/15 p-0.5">
               <button
                 type="button"
@@ -516,7 +534,7 @@ export default function ChatPage() {
                 }`}
                 onClick={() => setResponseMode("full")}
               >
-                Full
+                {t("chat.full")}
               </button>
               <button
                 type="button"
@@ -525,7 +543,7 @@ export default function ChatPage() {
                 }`}
                 onClick={() => setResponseMode("stream")}
               >
-                Stream
+                {t("chat.stream")}
               </button>
             </div>
           </div>
@@ -534,15 +552,19 @@ export default function ChatPage() {
               className="flex-1 rounded border border-white/15 bg-white/5 px-3 py-2 text-white placeholder:text-white/40"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Type a message..."
+              placeholder={t("chat.typeMessage")}
               disabled={sending}
             />
             <button
               className="rounded bg-white text-slate-900 px-4 py-2 disabled:opacity-50"
               type="submit"
-              disabled={sending || !sessionId}
+              disabled={sending}
             >
-              {sending ? (responseMode === "stream" ? "Streaming..." : "Sending...") : "Send"}
+              {sending
+                ? responseMode === "stream"
+                  ? t("chat.streamingState")
+                  : t("chat.sendingState")
+                : t("chat.send")}
             </button>
           </div>
         </form>

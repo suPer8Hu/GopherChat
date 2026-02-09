@@ -1,10 +1,15 @@
+"use client";
+
 import Link from "next/link";
 import { DM_Serif_Display, Space_Grotesk } from "next/font/google";
+import { useI18n } from "@/components/LanguageProvider";
+import LanguageToggle from "@/components/LanguageToggle";
 
 const display = DM_Serif_Display({ subsets: ["latin"], weight: "400" });
 const body = Space_Grotesk({ subsets: ["latin"], weight: ["400", "500", "700"] });
 
 export default function Home() {
+  const { t } = useI18n();
   return (
     <div className={`${body.className} relative min-h-screen overflow-hidden bg-slate-950 text-white`}>
       <style>{`
@@ -51,6 +56,24 @@ export default function Home() {
           35% { opacity: 1; letter-spacing: 0.28em; }
           80% { opacity: 1; }
           100% { opacity: 0; letter-spacing: 0.35em; transform: translateY(-6px); }
+        }
+        @keyframes starDrift {
+          0% { transform: translate3d(0, 0, 0); opacity: 0.6; }
+          50% { opacity: 0.9; }
+          100% { transform: translate3d(-6%, -10%, 0); opacity: 0.6; }
+        }
+        @keyframes starTwinkle {
+          0%, 100% { opacity: 0.6; }
+          50% { opacity: 1; }
+        }
+        @keyframes nebulaFloat {
+          0% { transform: translate3d(0, 0, 0) scale(1); }
+          50% { transform: translate3d(10px, -20px, 0) scale(1.04); }
+          100% { transform: translate3d(0, 0, 0) scale(1); }
+        }
+        @keyframes dustDrift {
+          0% { transform: translate3d(0, 0, 0); opacity: 0.35; }
+          100% { transform: translate3d(12%, -8%, 0); opacity: 0.5; }
         }
         .intro-overlay {
           position: absolute;
@@ -104,10 +127,50 @@ export default function Home() {
           .intro-gradient,
           .intro-sweep,
           .intro-ring,
-          .intro-word {
+          .intro-word,
+          .starfield,
+          .starfield-2,
+          .cosmic-dust,
+          .cosmic-nebula {
             animation: none !important;
             opacity: 0 !important;
           }
+        }
+        .starfield {
+          position: absolute;
+          inset: -20%;
+          background-image:
+            radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.6), transparent 55%),
+            radial-gradient(1px 1px at 70% 80%, rgba(255,255,255,0.5), transparent 60%),
+            radial-gradient(1px 1px at 40% 60%, rgba(255,255,255,0.4), transparent 55%),
+            radial-gradient(1px 1px at 85% 25%, rgba(255,255,255,0.6), transparent 60%),
+            radial-gradient(1px 1px at 10% 75%, rgba(255,255,255,0.5), transparent 60%);
+          background-size: 220px 220px;
+          animation: starDrift 26s linear infinite;
+          opacity: 0.65;
+        }
+        .starfield-2 {
+          position: absolute;
+          inset: -30%;
+          background-image:
+            radial-gradient(1.2px 1.2px at 15% 20%, rgba(125,211,252,0.65), transparent 60%),
+            radial-gradient(1.4px 1.4px at 55% 35%, rgba(16,185,129,0.55), transparent 60%),
+            radial-gradient(1.2px 1.2px at 75% 55%, rgba(245,158,11,0.5), transparent 60%),
+            radial-gradient(1px 1px at 30% 85%, rgba(255,255,255,0.5), transparent 60%);
+          background-size: 260px 260px;
+          animation: starTwinkle 6s ease-in-out infinite;
+          opacity: 0.55;
+        }
+        .cosmic-nebula {
+          position: absolute;
+          inset: -20%;
+          background:
+            radial-gradient(60% 45% at 20% 20%, rgba(14,165,233,0.18), transparent 60%),
+            radial-gradient(50% 40% at 80% 30%, rgba(16,185,129,0.2), transparent 60%),
+            radial-gradient(40% 35% at 30% 80%, rgba(99,102,241,0.18), transparent 60%),
+            radial-gradient(30% 30% at 85% 75%, rgba(245,158,11,0.12), transparent 55%);
+          filter: blur(2px);
+          animation: nebulaFloat 24s ease-in-out infinite;
         }
       `}</style>
 
@@ -121,8 +184,10 @@ export default function Home() {
       </div>
 
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.16),_transparent_60%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,_rgba(245,158,11,0.12),_transparent_55%)]" />
+        <div className="starfield" />
+        <div className="starfield-2" />
+        <div className="cosmic-nebula" />
+        <div className="absolute inset-0 opacity-50 bg-[linear-gradient(120deg,_rgba(255,255,255,0.05),_transparent_45%,_rgba(255,255,255,0.04))]" />
         <div
           className="absolute -top-40 left-1/2 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-emerald-400/25 blur-3xl"
           style={{ animation: "floatOne 18s ease-in-out infinite" }}
@@ -135,7 +200,7 @@ export default function Home() {
           className="absolute top-12 right-[-6rem] h-[24rem] w-[24rem] rounded-full bg-teal-300/15 blur-3xl"
           style={{ animation: "floatThree 20s ease-in-out infinite" }}
         />
-        <div className="absolute inset-0 bg-[linear-gradient(120deg,_rgba(255,255,255,0.05),_transparent_40%,_rgba(255,255,255,0.04))]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.12),_transparent_65%)]" />
       </div>
 
       <header
@@ -145,12 +210,15 @@ export default function Home() {
         <div className="text-xs font-medium uppercase tracking-[0.35em] text-emerald-100/70">
           Gopherchat
         </div>
-        <Link
-          className="rounded-full border border-white/20 px-4 py-1.5 text-sm text-emerald-50/90 transition hover:border-white/50 hover:text-white"
-          href="/login"
-        >
-          Login
-        </Link>
+        <div className="flex items-center gap-2">
+          <LanguageToggle floating={false} />
+          <Link
+            className="rounded-full border border-white/20 px-4 py-1.5 text-sm text-emerald-50/90 transition hover:border-white/50 hover:text-white"
+            href="/login"
+          >
+            {t("home.login")}
+          </Link>
+        </div>
       </header>
 
       <main className="relative z-10 flex min-h-[calc(100vh-96px)] items-center justify-center px-6 sm:px-10">
@@ -165,15 +233,21 @@ export default function Home() {
             className="mx-auto mt-4 max-w-md text-sm text-emerald-50/70 sm:text-base"
             style={{ animation: "fadeUp 900ms ease-out both 1.8s" }}
           >
-            A fluid space for focused AI conversations.
+            {t("home.tagline")}
           </p>
           <div className="mt-8" style={{ animation: "fadeUp 1100ms ease-out both 2s" }}>
             <Link
               className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-300 via-teal-200 to-amber-200 px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-emerald-400/20 transition hover:scale-[1.02] hover:shadow-emerald-300/40"
               href="/login"
             >
-              Start a chat
+              {t("home.startChat")}
             </Link>
+          </div>
+          <div
+            className="mt-6 text-xs uppercase tracking-[0.35em] text-emerald-100/70"
+            style={{ animation: "fadeUp 1200ms ease-out both 2.1s" }}
+          >
+            {t("home.developer")}
           </div>
         </div>
       </main>

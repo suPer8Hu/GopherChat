@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import RouteTransition from "@/components/RouteTransition";
+import AppProviders from "@/components/AppProviders";
+import LanguageToggleGlobal from "@/components/LanguageToggleGlobal";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,10 +27,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <RouteTransition>{children}</RouteTransition>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <AppProviders>
+          <RouteTransition>
+            <LanguageToggleGlobal />
+            {children}
+          </RouteTransition>
+        </AppProviders>
       </body>
     </html>
   );

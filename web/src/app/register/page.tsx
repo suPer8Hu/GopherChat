@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
 import { setToken } from "@/lib/auth";
 import FlowBackground from "@/components/FlowBackground";
+import { useI18n } from "@/components/LanguageProvider";
 
 type RegisterResponse = {
   id: number;
@@ -16,6 +17,7 @@ type RegisterResponse = {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [captcha, setCaptcha] = useState("");
   const [password, setPassword] = useState("");
@@ -34,7 +36,7 @@ export default function RegisterPage() {
   async function sendCaptcha() {
     const emailTrim = email.trim();
     if (!emailTrim) {
-      setError("Email required");
+      setError(t("register.emailRequired"));
       return;
     }
     setSending(true);
@@ -46,7 +48,7 @@ export default function RegisterPage() {
       });
       setCooldown(60);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to send captcha");
+      setError(err instanceof ApiError ? err.message : t("register.sendFailed"));
     } finally {
       setSending(false);
     }
@@ -56,11 +58,11 @@ export default function RegisterPage() {
     e.preventDefault();
     const emailTrim = email.trim();
     if (!emailTrim || !captcha.trim() || !password) {
-      setError("Email, captcha, and password are required");
+      setError(t("register.required"));
       return;
     }
     if (password !== confirm) {
-      setError("Passwords do not match");
+      setError(t("register.passwordsMismatch"));
       return;
     }
 
@@ -79,24 +81,28 @@ export default function RegisterPage() {
       setToken(data.token);
       router.push("/chat");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Registration failed");
+      setError(err instanceof ApiError ? err.message : t("register.failed"));
     } finally {
       setSubmitting(false);
     }
   }
 
   const sendLabel =
-    cooldown > 0 ? `Resend in ${cooldown}s` : sending ? "Sending..." : "Send code";
+    cooldown > 0
+      ? t("register.resendIn", { seconds: cooldown })
+      : sending
+        ? t("register.sending")
+        : t("register.sendCode");
 
   return (
     <FlowBackground>
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="w-full max-w-md border rounded-lg p-6 bg-white text-slate-900 shadow-xl shadow-emerald-500/10">
-          <h1 className="text-xl font-semibold">Register</h1>
+          <h1 className="text-xl font-semibold">{t("register.title")}</h1>
 
           <form className="mt-4 space-y-3" onSubmit={onSubmit}>
             <div>
-              <label className="block text-sm font-medium">Email</label>
+              <label className="block text-sm font-medium">{t("register.email")}</label>
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 type="email"
@@ -108,7 +114,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium">Captcha</label>
+              <label className="block text-sm font-medium">{t("register.captcha")}</label>
               <div className="mt-1 flex gap-2">
                 <input
                   className="flex-1 border rounded px-3 py-2"
@@ -126,11 +132,11 @@ export default function RegisterPage() {
                   {sendLabel}
                 </button>
               </div>
-              <p className="mt-1 text-xs text-gray-500">Code expires in 5 minutes.</p>
+              <p className="mt-1 text-xs text-gray-500">{t("register.codeExpires")}</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium">Password</label>
+              <label className="block text-sm font-medium">{t("register.password")}</label>
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 type="password"
@@ -142,7 +148,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium">Confirm password</label>
+              <label className="block text-sm font-medium">{t("register.confirmPassword")}</label>
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 type="password"
@@ -160,14 +166,14 @@ export default function RegisterPage() {
               disabled={submitting}
               type="submit"
             >
-              {submitting ? "Creating account..." : "Create account"}
+              {submitting ? t("register.creating") : t("register.createAccount")}
             </button>
           </form>
 
           <p className="mt-4 text-sm">
-            Already have an account?{" "}
+            {t("register.haveAccount")}{" "}
             <Link className="underline" href="/login">
-              Login
+              {t("register.login")}
             </Link>
           </p>
         </div>

@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import FlowBackground from "@/components/FlowBackground";
+import { useI18n } from "@/components/LanguageProvider";
 
 export default function ForgotPasswordPage() {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [captcha, setCaptcha] = useState("");
   const [password, setPassword] = useState("");
@@ -25,7 +27,7 @@ export default function ForgotPasswordPage() {
   async function sendCaptcha() {
     const emailTrim = email.trim();
     if (!emailTrim) {
-      setError("Email required");
+      setError(t("forgot.emailRequired"));
       return;
     }
     setSending(true);
@@ -38,7 +40,7 @@ export default function ForgotPasswordPage() {
       });
       setCooldown(60);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to send captcha");
+      setError(err instanceof ApiError ? err.message : t("forgot.sendFailed"));
     } finally {
       setSending(false);
     }
@@ -48,11 +50,11 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     const emailTrim = email.trim();
     if (!emailTrim || !captcha.trim() || !password) {
-      setError("Email, captcha, and new password are required");
+      setError(t("forgot.required"));
       return;
     }
     if (password !== confirm) {
-      setError("Passwords do not match");
+      setError(t("forgot.passwordsMismatch"));
       return;
     }
 
@@ -69,34 +71,38 @@ export default function ForgotPasswordPage() {
           new_password: password,
         }),
       });
-      setSuccess("Password updated. You can log in now.");
+      setSuccess(t("forgot.updated"));
       setPassword("");
       setConfirm("");
       setCaptcha("");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Reset failed");
+      setError(err instanceof ApiError ? err.message : t("forgot.resetFailed"));
     } finally {
       setSubmitting(false);
     }
   }
 
   const sendLabel =
-    cooldown > 0 ? `Resend in ${cooldown}s` : sending ? "Sending..." : "Send code";
+    cooldown > 0
+      ? t("forgot.resendIn", { seconds: cooldown })
+      : sending
+        ? t("forgot.sending")
+        : t("forgot.sendCode");
 
   return (
     <FlowBackground>
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="w-full max-w-md border rounded-lg p-6 bg-white text-slate-900 shadow-xl shadow-emerald-500/10">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold">Reset password</h1>
+            <h1 className="text-xl font-semibold">{t("forgot.title")}</h1>
             <Link className="text-xs underline" href="/login">
-              Back to login
+              {t("forgot.back")}
             </Link>
           </div>
 
           <form className="mt-4 space-y-3" onSubmit={onSubmit}>
             <div>
-              <label className="block text-sm font-medium">Email</label>
+              <label className="block text-sm font-medium">{t("login.email")}</label>
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 type="email"
@@ -108,7 +114,7 @@ export default function ForgotPasswordPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium">Captcha</label>
+              <label className="block text-sm font-medium">{t("forgot.captcha")}</label>
               <div className="mt-1 flex gap-2">
                 <input
                   className="flex-1 border rounded px-3 py-2"
@@ -126,11 +132,11 @@ export default function ForgotPasswordPage() {
                   {sendLabel}
                 </button>
               </div>
-              <p className="mt-1 text-xs text-gray-500">Code expires in 5 minutes.</p>
+              <p className="mt-1 text-xs text-gray-500">{t("forgot.codeExpires")}</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium">New password</label>
+              <label className="block text-sm font-medium">{t("forgot.newPassword")}</label>
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 type="password"
@@ -142,7 +148,7 @@ export default function ForgotPasswordPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium">Confirm new password</label>
+              <label className="block text-sm font-medium">{t("forgot.confirmNewPassword")}</label>
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 type="password"
@@ -161,7 +167,7 @@ export default function ForgotPasswordPage() {
               disabled={submitting}
               type="submit"
             >
-              {submitting ? "Updating..." : "Update password"}
+              {submitting ? t("forgot.updating") : t("forgot.update")}
             </button>
           </form>
         </div>

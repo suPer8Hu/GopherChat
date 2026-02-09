@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -30,13 +32,39 @@ func NewRouter(db *gorm.DB, cfg config.Config, rds *redisstore.Store) *gin.Engin
 
 	r.Use(middleware.RequestID())
 
+	allowedOrigins := []string{
+		"http://localhost:3000",
+		"http://localhost:3001",
+	}
+	if extra := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); extra != "" {
+		for _, v := range strings.Split(extra, ",") {
+			v = strings.TrimSpace(v)
+			if v != "" {
+				allowedOrigins = append(allowedOrigins, v)
+			}
+		}
+	}
+
+	isAllowedOrigin := func(origin string) bool {
+		if origin == "" {
+			return false
+		}
+		for _, v := range allowedOrigins {
+			if origin == v {
+				return true
+			}
+		}
+		if strings.HasPrefix(origin, "https://") && strings.HasSuffix(origin, ".trycloudflare.com") {
+			return true
+		}
+		return false
+	}
+
 	r.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:3000",
-			"http://localhost:3001",
-		},
-		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "Idempotency-Key"},
+		AllowOrigins:     allowedOrigins,
+		AllowOriginFunc: isAllowedOrigin,
+		AllowMethods:    []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:    []string{"Origin", "Content-Type", "Accept", "Authorization", "Idempotency-Key"},
 		ExposeHeaders: []string{
 			"X-Request-Id",
 		},

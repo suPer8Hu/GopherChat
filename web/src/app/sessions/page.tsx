@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import FlowBackground from "@/components/FlowBackground";
+import { useI18n } from "@/components/LanguageProvider";
 
 type Session = {
   session_id: string;
@@ -22,6 +23,7 @@ type ListSessionsResp = {
 
 export default function SessionsPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [nextBeforeId, setNextBeforeId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,7 +38,7 @@ export default function SessionsPage() {
       setSessions(data.sessions ?? []);
       setNextBeforeId(data.next_before_id ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load sessions");
+      setError(e instanceof Error ? e.message : t("sessions.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -63,7 +65,7 @@ export default function SessionsPage() {
       });
       setNextBeforeId(data.next_before_id ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load more");
+      setError(e instanceof Error ? e.message : t("sessions.loadMoreFailed"));
     } finally {
       setLoadingMore(false);
     }
@@ -80,11 +82,11 @@ export default function SessionsPage() {
 
   return (
     <FlowBackground>
-      <div className="min-h-screen p-6">
+      <div className="min-h-screen p-4 md:p-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Sessions</h1>
+          <h1 className="text-xl font-semibold">{t("sessions.title")}</h1>
           <Link className="border rounded px-3 py-1" href="/chat">
-            New
+            {t("sessions.new")}
           </Link>
         </div>
 
@@ -92,13 +94,15 @@ export default function SessionsPage() {
 
         <div className="mt-4">
           <button className="text-sm border rounded px-2 py-1" onClick={loadFirst} disabled={loading}>
-            {loading ? "Loading..." : "Refresh"}
+            {loading ? t("sessions.loading") : t("sessions.refresh")}
           </button>
         </div>
 
         <div className="mt-6 space-y-3">
           {sessions.length === 0 ? (
-            <p className="text-sm text-white/70">{loading ? "Loading..." : "No sessions."}</p>
+            <p className="text-sm text-white/70">
+              {loading ? t("sessions.loading") : t("sessions.none")}
+            </p>
           ) : (
             sessions.map((s) => (
               <Link
@@ -108,7 +112,8 @@ export default function SessionsPage() {
               >
                 <div className="text-sm font-medium">{s.session_id}</div>
                 <div className="mt-1 text-xs text-white/70">
-                  {s.provider} · {s.model} · updated {new Date(s.updated_at).toLocaleString()}
+                  {s.provider} · {s.model} ·{" "}
+                  {t("sessions.updatedAt", { time: new Date(s.updated_at).toLocaleString() })}
                 </div>
               </Link>
             ))
@@ -121,7 +126,11 @@ export default function SessionsPage() {
             onClick={loadMore}
             disabled={!nextBeforeId || loadingMore}
           >
-            {loadingMore ? "Loading..." : nextBeforeId ? "Load more" : "No more"}
+            {loadingMore
+              ? t("sessions.loading")
+              : nextBeforeId
+                ? t("sessions.loadMore")
+                : t("sessions.noMore")}
           </button>
         </div>
       </div>

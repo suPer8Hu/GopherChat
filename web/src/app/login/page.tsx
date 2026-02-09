@@ -6,12 +6,14 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { setToken } from "@/lib/auth";
 import Link from "next/link";
 import FlowBackground from "@/components/FlowBackground";
+import { useI18n } from "@/components/LanguageProvider";
 
 
 type LoginResponse = { token: string };
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [emailOptions, setEmailOptions] = useState<string[]>([]);
@@ -69,7 +71,7 @@ export default function LoginPage() {
       setToken(data.token);
       router.push("/chat");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed");
+      setError(err instanceof ApiError ? err.message : t("login.failed"));
     } finally {
       setSubmitting(false);
     }
@@ -80,15 +82,15 @@ export default function LoginPage() {
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="w-full max-w-md border rounded-lg p-6 bg-white text-slate-900 shadow-xl shadow-emerald-500/10">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold">Login</h1>
+            <h1 className="text-xl font-semibold">{t("login.title")}</h1>
             <Link className="text-xs underline" href="/">
-              Home
+              {t("login.home")}
             </Link>
           </div>
 
-        <form className="mt-4 space-y-3" onSubmit={onSubmit}>
+          <form className="mt-4 space-y-3" onSubmit={onSubmit}>
             <div>
-              <label className="block text-sm font-medium">Email</label>
+              <label className="block text-sm font-medium">{t("login.email")}</label>
               <div className="relative">
                 <input
                   className="mt-1 w-full border rounded px-3 py-2"
@@ -118,7 +120,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium">Password</label>
+              <label className="block text-sm font-medium">{t("login.password")}</label>
               <input
                 className="mt-1 w-full border rounded px-3 py-2"
                 type="password"
@@ -136,22 +138,22 @@ export default function LoginPage() {
               disabled={submitting}
               type="submit"
             >
-              {submitting ? "Logging in..." : "Login"}
+              {submitting ? t("login.loggingIn") : t("login.cta")}
             </button>
-        </form>
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <Link className="underline" href="/forgot">
-            Forgot password?
-          </Link>
-          <span>
-            No account?{" "}
-            <Link className="underline" href="/register">
-              Create one
+          </form>
+          <div className="mt-4 flex items-center justify-between text-sm">
+            <Link className="underline" href="/forgot">
+              {t("login.forgot")}
             </Link>
-          </span>
+            <span>
+              {t("login.noAccount")}{" "}
+              <Link className="underline" href="/register">
+                {t("login.create")}
+              </Link>
+            </span>
+          </div>
         </div>
       </div>
-    </div>
-  </FlowBackground>
+    </FlowBackground>
   );
 }
