@@ -77,12 +77,12 @@ func NewHandler(db *gorm.DB, cfg config.Config, r *redisstore.Store) *Handler {
 	var visionSvc *vision.Service
 	if strings.TrimSpace(cfg.VisionModelPath) != "" && strings.TrimSpace(cfg.VisionLabelsPath) != "" {
 		classifier, err := vision.NewONNXClassifier(vision.Config{
-			ModelPath:  cfg.VisionModelPath,
-			LabelsPath: cfg.VisionLabelsPath,
-			InputH:     cfg.VisionInputH,
-			InputW:     cfg.VisionInputW,
-			InputName:  cfg.VisionInputName,
-			OutputName: cfg.VisionOutputName,
+			ModelPath:      cfg.VisionModelPath,
+			LabelsPath:     cfg.VisionLabelsPath,
+			InputH:         cfg.VisionInputH,
+			InputW:         cfg.VisionInputW,
+			InputName:      cfg.VisionInputName,
+			OutputName:     cfg.VisionOutputName,
 			OrtLibraryPath: cfg.VisionOrtLibPath,
 		})
 		if err != nil {
@@ -97,7 +97,6 @@ func NewHandler(db *gorm.DB, cfg config.Config, r *redisstore.Store) *Handler {
 		log.Printf("vision disabled: missing VISION_MODEL_PATH or VISION_LABELS_PATH")
 	}
 
-	visionVLMModel := strings.TrimSpace(cfg.VisionVLMModel)
 	visionVLMProvider := strings.ToLower(strings.TrimSpace(cfg.VisionVLMProvider))
 	if visionVLMProvider == "" {
 		if strings.TrimSpace(cfg.VisionGeminiAPIKey) != "" {
@@ -131,8 +130,8 @@ func NewHandler(db *gorm.DB, cfg config.Config, r *redisstore.Store) *Handler {
 		User: cfg.SMTPUser,
 		Pass: cfg.SMTPPass,
 		From: cfg.SMTPFrom},
-		ChatSvc: chatSvc,
-		Rabbit:  pub,
+		ChatSvc:   chatSvc,
+		Rabbit:    pub,
 		VisionSvc: visionSvc,
 		VisionVLM: visionVLM,
 	}

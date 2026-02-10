@@ -86,6 +86,9 @@ func NewRouter(db *gorm.DB, cfg config.Config, rds *redisstore.Store) *gin.Engin
 	// auth
 	r.POST("/login", h.Login)
 	r.POST("/password/reset", h.ResetPassword)
+	// demo (no auth)
+	r.POST("/demo/chat", h.DemoChat)
+	r.POST("/demo/chat/stream", h.DemoChatStream)
 	authGroup := r.Group("/")
 	authGroup.Use(middleware.AuthRequired(cfg.JWTSecret))
 	authGroup.GET("/me", h.Me)

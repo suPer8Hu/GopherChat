@@ -23,6 +23,10 @@ func NewService(repo *Repo, registry *ai.Registry, contextWindowSize int) *Servi
 	return &Service{repo: repo, registry: registry, contextWindowSize: contextWindowSize}
 }
 
+func (s *Service) ProviderRegistry() *ai.Registry {
+	return s.registry
+}
+
 const (
 	defaultProvider = "ollama"
 	defaultModel    = "llama3:latest"

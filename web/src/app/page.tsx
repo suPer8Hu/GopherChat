@@ -235,12 +235,21 @@ export default function Home() {
           >
             {t("home.tagline")}
           </p>
-          <div className="mt-8" style={{ animation: "fadeUp 1100ms ease-out both 2s" }}>
+          <div
+            className="mt-8 flex flex-wrap items-center justify-center gap-3"
+            style={{ animation: "fadeUp 1100ms ease-out both 2s" }}
+          >
             <Link
               className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-300 via-teal-200 to-amber-200 px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-emerald-400/20 transition hover:scale-[1.02] hover:shadow-emerald-300/40"
               href="/login"
             >
               {t("home.startChat")}
+            </Link>
+            <Link
+              className="inline-flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-sm font-semibold text-white/90 shadow-sm transition hover:border-white/60 hover:text-white"
+              href="/demo"
+            >
+              {t("home.demo")}
             </Link>
           </div>
           <div

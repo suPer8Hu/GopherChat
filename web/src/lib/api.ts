@@ -111,3 +111,19 @@ export async function askVision(
     auth: true,
   });
 }
+
+export type DemoMessage = {
+  role: "user" | "assistant" | "system";
+  content: string;
+};
+
+export type DemoChatResult = {
+  reply: string;
+};
+
+export async function demoChat(messages: DemoMessage[]): Promise<DemoChatResult> {
+  return apiFetch<DemoChatResult>("/demo/chat", {
+    method: "POST",
+    body: JSON.stringify({ messages }),
+  });
+}
