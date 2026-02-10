@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { clearToken, getToken } from "@/lib/auth";
 import { useI18n } from "@/components/LanguageProvider";
@@ -9,9 +10,9 @@ import LanguageToggle from "@/components/LanguageToggle";
 
 const PAGE_SIZE = 20;
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-// const STREAM_FIRST_CHUNK_TIMEOUT_MS = 8000;
+const STREAM_FIRST_CHUNK_TIMEOUT_MS = 8000;
 //set it to 50 to test if the stream can turn it in async mode
-const STREAM_FIRST_CHUNK_TIMEOUT_MS = 50; 
+// const STREAM_FIRST_CHUNK_TIMEOUT_MS = 50; 
 const ASYNC_POLL_INTERVAL_MS = 1000;
 type Me = { id: number; email: string; username: string };
 
@@ -555,6 +556,12 @@ export default function ChatPage() {
               placeholder={t("chat.typeMessage")}
               disabled={sending}
             />
+            <Link
+              className="rounded border border-white/20 px-3 py-2 text-xs text-white/80 hover:text-white"
+              href="/vision"
+            >
+              {t("vision.openPage")}
+            </Link>
             <button
               className="rounded bg-white text-slate-900 px-4 py-2 disabled:opacity-50"
               type="submit"

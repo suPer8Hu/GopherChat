@@ -40,7 +40,9 @@ export async function apiFetch<T>(
   const url = `${API_BASE_URL}${path}`;
   const headers = new Headers(init?.headers);
 
-  if (!headers.has("Content-Type") && init?.body) {
+  const isFormData =
+    typeof FormData !== "undefined" && init?.body instanceof FormData;
+  if (!headers.has("Content-Type") && init?.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -64,4 +66,48 @@ export async function apiFetch<T>(
   }
 
   return json.data;
+}
+
+export type VisionPrediction = {
+  index: number;
+  label: string;
+  label_zh?: string;
+  score: number;
+};
+
+export type VisionResult = {
+  top_k: number;
+  predictions: VisionPrediction[];
+};
+
+export async function recognizeImage(
+  file: File,
+  topK = 3
+): Promise<VisionResult> {
+  const form = new FormData();
+  form.append("image", file);
+  const query = topK > 0 ? `?top_k=${topK}` : "";
+  return apiFetch<VisionResult>(`/vision/recognize${query}`, {
+    method: "POST",
+    body: form,
+    auth: true,
+  });
+}
+
+export type VisionAskResult = {
+  answer: string;
+};
+
+export async function askVision(
+  file: File,
+  question: string
+): Promise<VisionAskResult> {
+  const form = new FormData();
+  form.append("image", file);
+  form.append("question", question);
+  return apiFetch<VisionAskResult>("/vision/ask", {
+    method: "POST",
+    body: form,
+    auth: true,
+  });
 }

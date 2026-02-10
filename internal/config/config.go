@@ -33,6 +33,23 @@ type Config struct {
 	// rabbitMQ
 	RabbitURL   string
 	RabbitQueue string
+
+	// vision
+	VisionModelPath     string
+	VisionLabelsPath    string
+	VisionInputH        int
+	VisionInputW        int
+	VisionInputName     string
+	VisionOutputName    string
+	VisionTopK          int
+	VisionTopKMax       int
+	VisionMaxImageBytes int64
+	VisionOrtLibPath    string
+	VisionVLMModel      string
+	VisionVLMProvider   string
+	VisionGeminiAPIKey  string
+	VisionGeminiModel   string
+	VisionGeminiBaseURL string
 }
 
 func Load() Config {
@@ -116,6 +133,37 @@ func Load() Config {
 		rabbitQueue = "chat_jobs"
 	}
 
+	visionInputH := 224
+	if v := os.Getenv("VISION_INPUT_H"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			visionInputH = n
+		}
+	}
+	visionInputW := 224
+	if v := os.Getenv("VISION_INPUT_W"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			visionInputW = n
+		}
+	}
+	visionTopK := 3
+	if v := os.Getenv("VISION_TOP_K"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			visionTopK = n
+		}
+	}
+	visionTopKMax := 5
+	if v := os.Getenv("VISION_TOP_K_MAX"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			visionTopKMax = n
+		}
+	}
+	visionMaxBytes := int64(200 * 1024 * 1024)
+	if v := os.Getenv("VISION_MAX_IMAGE_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			visionMaxBytes = n
+		}
+	}
+
 	return Config{
 		DBDSN:     dsn,
 		JWTSecret: secret,
@@ -142,5 +190,21 @@ func Load() Config {
 
 		RabbitURL:   rabbitURL,
 		RabbitQueue: rabbitQueue,
+
+		VisionModelPath:     os.Getenv("VISION_MODEL_PATH"),
+		VisionLabelsPath:    os.Getenv("VISION_LABELS_PATH"),
+		VisionInputH:        visionInputH,
+		VisionInputW:        visionInputW,
+		VisionInputName:     os.Getenv("VISION_INPUT_NAME"),
+		VisionOutputName:    os.Getenv("VISION_OUTPUT_NAME"),
+		VisionTopK:          visionTopK,
+		VisionTopKMax:       visionTopKMax,
+		VisionMaxImageBytes: visionMaxBytes,
+		VisionOrtLibPath:    os.Getenv("VISION_ORT_LIB_PATH"),
+		VisionVLMModel:      os.Getenv("VISION_VLM_MODEL"),
+		VisionVLMProvider:   os.Getenv("VISION_VLM_PROVIDER"),
+		VisionGeminiAPIKey:  os.Getenv("VISION_GEMINI_API_KEY"),
+		VisionGeminiModel:   os.Getenv("VISION_GEMINI_MODEL"),
+		VisionGeminiBaseURL: os.Getenv("VISION_GEMINI_BASE_URL"),
 	}
 }

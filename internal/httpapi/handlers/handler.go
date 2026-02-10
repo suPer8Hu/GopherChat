@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"strings"
 
 	"github.com/suPer8Hu/ai-platform/internal/ai"
@@ -10,6 +11,7 @@ import (
 	"github.com/suPer8Hu/ai-platform/internal/email"
 	"github.com/suPer8Hu/ai-platform/internal/store/rabbitmq"
 	"github.com/suPer8Hu/ai-platform/internal/store/redisstore"
+	"github.com/suPer8Hu/ai-platform/internal/vision"
 	"gorm.io/gorm"
 )
 
@@ -20,6 +22,8 @@ type Handler struct {
 	SMTPSetting email.SMTPConfig
 	ChatSvc     *chat.Service
 	Rabbit      *rabbitmq.Publisher
+	VisionSvc   *vision.Service
+	VisionVLM   vision.VLM
 }
 
 func NewHandler(db *gorm.DB, cfg config.Config, r *redisstore.Store) *Handler {
@@ -69,6 +73,59 @@ func NewHandler(db *gorm.DB, cfg config.Config, r *redisstore.Store) *Handler {
 	if err != nil {
 		panic(err)
 	}
+
+	var visionSvc *vision.Service
+	if strings.TrimSpace(cfg.VisionModelPath) != "" && strings.TrimSpace(cfg.VisionLabelsPath) != "" {
+		classifier, err := vision.NewONNXClassifier(vision.Config{
+			ModelPath:  cfg.VisionModelPath,
+			LabelsPath: cfg.VisionLabelsPath,
+			InputH:     cfg.VisionInputH,
+			InputW:     cfg.VisionInputW,
+			InputName:  cfg.VisionInputName,
+			OutputName: cfg.VisionOutputName,
+			OrtLibraryPath: cfg.VisionOrtLibPath,
+		})
+		if err != nil {
+			log.Printf("vision init failed: %v", err)
+		} else {
+			visionSvc, err = vision.NewService(classifier, cfg.VisionTopK, cfg.VisionTopKMax)
+			if err != nil {
+				log.Printf("vision service init failed: %v", err)
+			}
+		}
+	} else {
+		log.Printf("vision disabled: missing VISION_MODEL_PATH or VISION_LABELS_PATH")
+	}
+
+	visionVLMModel := strings.TrimSpace(cfg.VisionVLMModel)
+	visionVLMProvider := strings.ToLower(strings.TrimSpace(cfg.VisionVLMProvider))
+	if visionVLMProvider == "" {
+		if strings.TrimSpace(cfg.VisionGeminiAPIKey) != "" {
+			visionVLMProvider = "gemini"
+		}
+	}
+
+	var visionVLM vision.VLM
+	switch visionVLMProvider {
+	case "gemini":
+		model := strings.TrimSpace(cfg.VisionGeminiModel)
+		if model == "" {
+			model = "gemini-2.0-flash"
+		}
+		vlm, err := vision.NewGeminiVLM(vision.VLMConfig{
+			BaseURL: cfg.VisionGeminiBaseURL,
+			APIKey:  cfg.VisionGeminiAPIKey,
+			Model:   model,
+		})
+		if err != nil {
+			log.Printf("vision vlm init failed: %v", err)
+		} else {
+			visionVLM = vlm
+		}
+	default:
+		log.Printf("vision vlm disabled: unknown VISION_VLM_PROVIDER=%q", visionVLMProvider)
+	}
+
 	return &Handler{DB: db, Cfg: cfg, Redis: r, SMTPSetting: email.SMTPConfig{Host: cfg.SMTPHost,
 		Port: cfg.SMTPPort,
 		User: cfg.SMTPUser,
@@ -76,5 +133,7 @@ func NewHandler(db *gorm.DB, cfg config.Config, r *redisstore.Store) *Handler {
 		From: cfg.SMTPFrom},
 		ChatSvc: chatSvc,
 		Rabbit:  pub,
+		VisionSvc: visionSvc,
+		VisionVLM: visionVLM,
 	}
 }

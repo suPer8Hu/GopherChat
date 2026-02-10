@@ -3,6 +3,7 @@ module github.com/suPer8Hu/ai-platform
 go 1.25.1
 
 require (
+	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
@@ -10,7 +11,9 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/redis/go-redis/v9 v9.17.3
+	github.com/yalue/onnxruntime_go v1.25.0
 	golang.org/x/crypto v0.47.0
+	golang.org/x/image v0.31.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.5
 )
@@ -24,7 +27,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
-	github.com/gin-contrib/cors v1.7.6 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect

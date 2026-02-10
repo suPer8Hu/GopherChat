@@ -101,6 +101,11 @@ func NewRouter(db *gorm.DB, cfg config.Config, rds *redisstore.Store) *gin.Engin
 	authGroup.POST("/chat/messages/async", h.SendChatMessageAsync)
 	authGroup.GET("/chat/sessions/:session_id/messages", h.ListChatMessages)
 	authGroup.GET("/chat/jobs/:job_id", h.GetChatJob)
+	// Vision (JWT required)
+	authGroup.POST("/vision/recognize", h.RecognizeImage)
+	authGroup.POST("/image/recognize", h.RecognizeImage)
+	authGroup.POST("/vision/ask", h.AskImage)
+	authGroup.POST("/image/ask", h.AskImage)
 
 	return r
 }

@@ -5,7 +5,7 @@ import LanguageToggle from "@/components/LanguageToggle";
 
 export default function LanguageToggleGlobal() {
   const pathname = usePathname();
-  if (pathname === "/" || pathname.startsWith("/chat")) {
+  if (pathname === "/" || pathname.startsWith("/chat") || pathname.startsWith("/vision")) {
     return null;
   }
   return <LanguageToggle />;
