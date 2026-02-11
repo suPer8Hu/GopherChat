@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import MessageContent from "@/components/MessageContent";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
@@ -381,6 +382,14 @@ export default function ChatPage() {
 
   return (
     <div className="h-[100dvh] p-4 pt-16 md:p-6 md:pt-16 flex flex-col overflow-hidden relative">
+      <style>{`
+        @keyframes chatDotPulse {
+          0% { transform: translateY(0); opacity: 0.35; }
+          30% { transform: translateY(-4px); opacity: 1; }
+          60% { transform: translateY(0); opacity: 0.6; }
+          100% { transform: translateY(0); opacity: 0.35; }
+        }
+      `}</style>
       <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
         <LanguageToggle floating={false} />
         <button
@@ -490,13 +499,17 @@ export default function ChatPage() {
                         #{m.id} · {m.role} · {new Date(m.created_at).toLocaleString()}
                       </div>
                       <div
-                        className={`mt-2 whitespace-pre-wrap rounded-2xl px-4 py-3 text-base leading-7 shadow-sm ${
+                        className={`mt-2 inline-block max-w-full rounded-2xl px-4 py-3 text-base leading-7 shadow-sm ${
                           m.role === "user"
                             ? "bg-emerald-300/90 text-slate-900"
                             : "bg-white/10 text-white border border-white/10"
                         }`}
                       >
-                        {m.content}
+                        {m.role === "user" ? (
+                          <span className="whitespace-pre-wrap">{m.content}</span>
+                        ) : (
+                          <MessageContent content={m.content} />
+                        )}
                       </div>
                     </div>
                   </div>
@@ -506,8 +519,23 @@ export default function ChatPage() {
                 <div className="flex justify-start">
                   <div className="max-w-[80%]">
                     <div className="text-xs text-white/50">{t("chat.streaming")}</div>
-                    <div className="mt-2 whitespace-pre-wrap rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-base leading-7 text-white shadow-sm">
-                      {streamingText || "…"}
+                    <div className="mt-2 inline-block max-w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-white shadow-sm">
+                      {streamingText ? (
+                        <span className="whitespace-pre-wrap">{streamingText}</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            {[0, 1, 2].map((i) => (
+                              <span
+                                key={i}
+                                className="h-2 w-2 rounded-full bg-emerald-200/90"
+                                style={{ animation: `chatDotPulse 1s ${i * 0.15}s infinite` }}
+                              />
+                            ))}
+                          </div>
+                          <div className="text-xs text-white/70">{t("chat.thinking")}</div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
